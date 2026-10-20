@@ -1,6 +1,7 @@
 package com.learntrack.course.service;
 
 import com.learntrack.course.dto.EnrollmentResponse;
+import com.learntrack.course.event.EnrollmentCreatedEvent;
 import com.learntrack.course.exception.AlreadyEnrolledException;
 import com.learntrack.course.exception.CourseNotFoundException;
 import com.learntrack.course.exception.EnrollmentNotFoundException;
@@ -10,9 +11,11 @@ import com.learntrack.course.repository.CourseRepository;
 import com.learntrack.course.repository.EnrollmentRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
 
@@ -26,6 +29,7 @@ class EnrollmentServiceTest {
 
     @Mock CourseRepository courseRepository;
     @Mock EnrollmentRepository enrollmentRepository;
+    @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks EnrollmentService enrollmentService;
 
     private final Course course = new Course("Java Basics", "Intro", "t@x.com");
@@ -43,6 +47,21 @@ class EnrollmentServiceTest {
     }
 
     @Test
+    void enroll_publishesEnrollmentCreatedEvent() {
+        when(courseRepository.findById(1L)).thenReturn(Optional.of(course));
+        when(enrollmentRepository.existsByCourseIdAndStudentEmail(1L, "s@x.com")).thenReturn(false);
+        when(enrollmentRepository.save(any(Enrollment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        enrollmentService.enroll(1L, "s@x.com");
+
+        ArgumentCaptor<EnrollmentCreatedEvent> event = ArgumentCaptor.forClass(EnrollmentCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().studentEmail()).isEqualTo("s@x.com");
+        assertThat(event.getValue().courseTitle()).isEqualTo("Java Basics");
+        assertThat(event.getValue().eventId()).isNotBlank();
+    }
+
+    @Test
     void enroll_twice_isRejected() {
         when(courseRepository.findById(1L)).thenReturn(Optional.of(course));
         when(enrollmentRepository.existsByCourseIdAndStudentEmail(1L, "s@x.com")).thenReturn(true);
@@ -50,6 +69,7 @@ class EnrollmentServiceTest {
         assertThatThrownBy(() -> enrollmentService.enroll(1L, "s@x.com"))
                 .isInstanceOf(AlreadyEnrolledException.class);
         verify(enrollmentRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test

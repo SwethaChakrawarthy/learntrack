@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory)]
-  [ValidateSet("auth-service", "course-service")]
+  [ValidateSet("auth-service", "course-service", "notification-service")]
   [string]$Service
 )
 

@@ -7,15 +7,15 @@ A course-enrollment platform built as Spring Boot microservices with a React fro
 |---|---|---|---|
 | auth-service | 8081 | Done | Registration, login, JWT issuing |
 | course-service | 8082 | Done | Course catalog and enrollments (PostgreSQL + Redis cache-aside) |
-| notification-service | | Planned | Consumes Kafka enrollment events |
+| notification-service | 8083 | Done | Consumes Kafka enrollment events, idempotent, with a dead-letter topic |
 | gateway | | Planned | Spring Cloud Gateway entry point |
 | frontend | | Planned | React + TypeScript |
 
 ## Run locally
 1. `cp .env.example .env` and fill in the values.
-2. `docker compose up -d` to start PostgreSQL and Redis.
-3. In each service folder, export the same values and run `mvn spring-boot:run`
-   (or run the `*Application` class from IntelliJ with the env variables set in the run configuration).
+2. `docker compose up -d` to start PostgreSQL, Redis and Kafka.
+3. Start each service in its own terminal (Windows): `powershell -ExecutionPolicy Bypass -File .\dev.ps1 <service-name>`.
+   This selects JDK 21 and loads `.env`.
 4. Run tests with `mvn test` in each service folder.
 
 ## Auth API (auth-service, 8081)
@@ -39,6 +39,10 @@ A course-enrollment platform built as Spring Boot microservices with a React fro
 ## Design notes
 - **Database per service:** auth-service and course-service each own their own PostgreSQL database.
 - **Cache-aside with Redis:** reads check Redis first, fall back to PostgreSQL on a miss, then cache the result for 10 minutes. Writes evict the affected keys after the transaction commits. If Redis is down, reads fall back to the database.
+- **Event-driven notifications with Kafka:** enrolling publishes an `EnrollmentCreated` event to `learntrack.enrollment.created`, but only after the database transaction commits, so a rolled-back enrollment never produces an event. Events are plain JSON keyed by student email, so one student's events stay in order and services share no Java classes.
+- **Idempotent consumer:** Kafka delivers at least once, so notification-service records each `eventId` in a `processed_events` table (primary key) in the same transaction as the notification. A redelivered event is skipped.
+- **Retries and dead-letter topic:** a failing message is retried 3 times, 1 second apart, then moved to `learntrack.enrollment.created.DLT`. Malformed messages skip retries and go straight to the DLT.
+- **Known trade-off:** if Kafka is down at the moment after commit, that event is lost. The production fix is the transactional outbox pattern.
 - **Duplicate enrollments** are blocked by an application check and by a database unique constraint, which catches two simultaneous requests.
 
 ## Making an instructor account
