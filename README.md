@@ -1,6 +1,25 @@
 # LearnTrack
 
-A course-enrollment platform built as Spring Boot microservices with a React frontend.
+A course-enrollment platform built as Spring Boot microservices: JWT authentication, PostgreSQL, Redis caching, and Kafka event-driven notifications. A React frontend is in progress.
+
+**Tech stack:** Java 21 · Spring Boot 3 · Spring Security (JWT) · Spring Data JPA · PostgreSQL · Redis · Apache Kafka · Docker Compose · JUnit 5 · Mockito
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Client([Client]) --> Auth[auth-service<br/>:8081]
+    Client --> Course[course-service<br/>:8082]
+    Auth --> AuthDB[(PostgreSQL<br/>learntrack_auth)]
+    Course --> CourseDB[(PostgreSQL<br/>learntrack_course)]
+    Course <--> Redis[(Redis<br/>catalog cache)]
+    Course -- EnrollmentCreated --> Kafka{{Kafka<br/>learntrack.enrollment.created}}
+    Kafka --> Notif[notification-service<br/>:8083]
+    Notif --> NotifDB[(PostgreSQL<br/>learntrack_notification)]
+    Notif -. failed after retries .-> DLT{{Dead-letter topic}}
+```
+
+auth-service issues JWTs; course-service validates them with the same signing key, so the services never call each other to check a login.
 
 ## Services
 | Service | Port | Status | Purpose |
@@ -14,9 +33,10 @@ A course-enrollment platform built as Spring Boot microservices with a React fro
 ## Run locally
 1. `cp .env.example .env` and fill in the values.
 2. `docker compose up -d` to start PostgreSQL, Redis and Kafka.
-3. Start each service in its own terminal (Windows): `powershell -ExecutionPolicy Bypass -File .\dev.ps1 <service-name>`.
-   This selects JDK 21 and loads `.env`.
-4. Run tests with `mvn test` in each service folder.
+3. Start each service in its own terminal (requires JDK 21 and Maven):
+   - **macOS / Linux:** `set -a; source .env; set +a; cd auth-service && mvn spring-boot:run` (repeat for `course-service` and `notification-service`)
+   - **Windows:** `powershell -ExecutionPolicy Bypass -File .\dev.ps1 auth-service` (selects JDK 21 and loads `.env`)
+4. Run tests with `mvn test` in each service folder (no database or Kafka needed; tests use mocks).
 
 ## Auth API (auth-service, 8081)
 | Method | Path | Auth | Description |
@@ -37,7 +57,7 @@ A course-enrollment platform built as Spring Boot microservices with a React fro
 | PATCH | /api/enrollments/{id}/progress | Bearer token (owner) | Update progress 0–100 |
 
 ## Design notes
-- **Database per service:** auth-service and course-service each own their own PostgreSQL database.
+- **Database per service:** each service owns its own PostgreSQL database, so no service reads another's tables.
 - **Cache-aside with Redis:** reads check Redis first, fall back to PostgreSQL on a miss, then cache the result for 10 minutes. Writes evict the affected keys after the transaction commits. If Redis is down, reads fall back to the database.
 - **Event-driven notifications with Kafka:** enrolling publishes an `EnrollmentCreated` event to `learntrack.enrollment.created`, but only after the database transaction commits, so a rolled-back enrollment never produces an event. Events are plain JSON keyed by student email, so one student's events stay in order and services share no Java classes.
 - **Idempotent consumer:** Kafka delivers at least once, so notification-service records each `eventId` in a `processed_events` table (primary key) in the same transaction as the notification. A redelivered event is skipped.
