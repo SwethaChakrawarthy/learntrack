@@ -1,0 +1,24 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/learntrack_auth
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update   # fine for now; we'll switch to Flyway migrations later
+    open-in-view: false
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-minutes: 60
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

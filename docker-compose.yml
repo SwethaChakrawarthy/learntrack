@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: learntrack-postgres
+    environment:
+      POSTGRES_DB: learntrack_auth
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    image: redis:7
+    container_name: learntrack-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
